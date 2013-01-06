@@ -92,7 +92,7 @@ func (g *Graphite) Connect() {
 	}
 }
 
-// SendMetric is the public function to send a single metric to Graphite.
+// SendMetric is used to send a single metric to Graphite.
 // Sets metric.Timestamp to current Unix time if necessary.
 func (g *Graphite) SendMetric(metric Metric) {
 	if metric.Timestamp == 0 {
