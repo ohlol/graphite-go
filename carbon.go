@@ -10,9 +10,19 @@ import (
 	"time"
 )
 
-// Graphite is the struct by which we interface with the library. At minimum you must set
+// Interface type for Graphite.
+type Graphite interface {
+	Connect()
+	SendMetric()
+	Sendall()
+	chanRecv()
+	chanSend()
+	sendMetric()
+}
+
+// Graphite is how we interface with the library. At minimum you must set
 // Host and Port fields.
-type Graphite struct {
+type GraphiteServer struct {
 	Host    string
 	Port    uint16
 	Timeout time.Duration
@@ -32,7 +42,7 @@ const (
 	defaultTimeout = 30
 )
 
-var doneSending bool
+var doneSending = false
 
 // connect is the unexported function used for connecting
 func connect(host string, port uint16, timeout time.Duration) (net.Conn, error) {
@@ -41,35 +51,9 @@ func connect(host string, port uint16, timeout time.Duration) (net.Conn, error) 
 	return net.DialTimeout("tcp", connectAddr, timeout)
 }
 
-// sendMetric is the unexported function to send a single metric to Graphite.
-func sendMetric(conn net.Conn, metric Metric) {
-	log.Printf("sending %s", metric.Name)
-	fmt.Fprintf(conn, "%s %s %s", metric.Name, metric.Value, metric.Timestamp)
-}
-
-// chanSendMetrics sends a Metric slice to the given channel
-func chanSendMetrics(ch chan Metric, buffer []Metric) {
-	for _, item := range buffer {
-		if len(item.Name) > 0 {
-			log.Printf("buffering %s", item.Name)
-			ch <- item
-		}
-	}
-}
-
-// chanRecvMetrics reads `bufsz` numbered metrics off of the given channel and
-// sends them to Graphite.
-func chanRecvMetrics(ch chan Metric, conn net.Conn, bufsz int) {
-	for i := 0; i < bufsz; i++ {
-		item := <-ch
-		sendMetric(conn, item)
-	}
-
-	doneSending = true
-}
-
 // Connect wraps the unexported connect function.
-func (g *Graphite) Connect() {
+// Sets a connection timeout if unset.
+func (g *GraphiteServer) Connect() {
 	var (
 		err     error
 		timeout time.Duration
@@ -94,23 +78,50 @@ func (g *Graphite) Connect() {
 
 // SendMetric is used to send a single metric to Graphite.
 // Sets metric.Timestamp to current Unix time if necessary.
-func (g *Graphite) SendMetric(metric Metric) {
+func (g *GraphiteServer) SendMetric(metric Metric) {
 	if metric.Timestamp == 0 {
 		metric.Timestamp = time.Now().Unix()
 	}
 
-	sendMetric(g.conn, metric)
+	g.sendMetric(metric)
 }
 
 // Sendall is used to buffered metrics to Graphite via a channel and go routines.
-func (g *Graphite) Sendall(buf []Metric) {
+func (g *GraphiteServer) Sendall(buf []Metric) {
 	doneSending = false
 
 	ch := make(chan Metric, len(buf))
-	go chanSendMetrics(ch, buf)
-	go chanRecvMetrics(ch, g.conn, len(buf))
+	go g.chanSend(ch, buf)
+	go g.chanRecv(ch, len(buf))
 
 	for doneSending == false {
 		time.Sleep(1 * time.Second)
 	}
+}
+
+// chanRecvMetrics reads `bufsz` numbered metrics off of the given channel and
+// sends them to Graphite.
+func (g *GraphiteServer) chanRecv(ch chan Metric, bufsz int) {
+	for i := 0; i < bufsz; i++ {
+		item := <-ch
+		g.sendMetric(item)
+	}
+
+	doneSending = true
+}
+
+// chanSendMetrics sends a Metric slice to the given channel
+func (g *GraphiteServer) chanSend(ch chan Metric, buffer []Metric) {
+	for _, item := range buffer {
+		if len(item.Name) > 0 {
+			log.Printf("buffering %s", item.Name)
+			ch <- item
+		}
+	}
+}
+
+// sendMetric is the unexported function to send a single metric to Graphite.
+func (g *GraphiteServer) sendMetric(metric Metric) {
+	log.Printf("sending %s", metric.Name)
+	fmt.Fprintf(g.conn, "%s %s %d\n", metric.Name, metric.Value, metric.Timestamp)
 }
