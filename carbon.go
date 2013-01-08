@@ -70,7 +70,7 @@ func (g *GraphiteServer) getconn() GraphiteServer {
 	g.conn, err = net.DialTimeout("tcp", connectAddr, g.Timeout)
 	for err != nil {
 		log.Printf(err.Error())
-		log.Printf(fmt.Sprintf("error123 connecting, retrying in %d seconds", waitTime))
+		log.Printf(fmt.Sprintf("error connecting, retrying in %d seconds", waitTime))
 		time.Sleep(waitTime * time.Second)
 
 		waitTime += 5
