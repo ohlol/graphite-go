@@ -49,36 +49,6 @@ func Connect(graphite GraphiteServer) GraphiteServer {
 	return graphite.getconn()
 }
 
-// getconn is the unexported function used to connect to Graphite.
-// If there is a problem with the connection it retries with an incremental
-// sleep time.
-// Returns a pointer to the GraphiteServer struct.
-func (g *GraphiteServer) getconn() GraphiteServer {
-	var (
-		err      error
-		waitTime time.Duration
-	)
-
-	connectAddr := fmt.Sprintf("%s:%d", g.Host, g.Port)
-
-	if g.Timeout == 0 {
-		g.Timeout = defaultTimeout * time.Second
-	}
-
-	waitTime = initialWaitTime
-	g.conn, err = net.DialTimeout("tcp", connectAddr, g.Timeout)
-	for err != nil {
-		log.Printf(err.Error())
-		log.Printf(fmt.Sprintf("error connecting, retrying in %d seconds", waitTime))
-		time.Sleep(waitTime * time.Second)
-
-		waitTime += 5
-		g.conn, err = net.DialTimeout("tcp", connectAddr, g.Timeout)
-	}
-
-	return *g
-}
-
 // SendMetric is used to send a single metric to Graphite.
 // Sets metric.Timestamp to current Unix time if necessary.
 func (g *GraphiteServer) SendMetric(metric Metric) {
@@ -131,6 +101,36 @@ func (g *GraphiteServer) chanSend(ch chan Metric, buffer []Metric) {
 			ch <- item
 		}
 	}
+}
+
+// getconn is the unexported function used to connect to Graphite.
+// If there is a problem with the connection it retries with an incremental
+// sleep time.
+// Returns a pointer to the GraphiteServer struct.
+func (g *GraphiteServer) getconn() GraphiteServer {
+	var (
+		err      error
+		waitTime time.Duration
+	)
+
+	connectAddr := fmt.Sprintf("%s:%d", g.Host, g.Port)
+
+	if g.Timeout == 0 {
+		g.Timeout = defaultTimeout * time.Second
+	}
+
+	waitTime = initialWaitTime
+	g.conn, err = net.DialTimeout("tcp", connectAddr, g.Timeout)
+	for err != nil {
+		log.Printf(err.Error())
+		log.Printf(fmt.Sprintf("error connecting, retrying in %d seconds", waitTime))
+		time.Sleep(waitTime * time.Second)
+
+		waitTime += 5
+		g.conn, err = net.DialTimeout("tcp", connectAddr, g.Timeout)
+	}
+
+	return *g
 }
 
 // sendMetric is the unexported function to send a single metric to Graphite.
