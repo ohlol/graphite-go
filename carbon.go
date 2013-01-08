@@ -13,7 +13,6 @@ import (
 
 // Graphite is the main interface to the library
 type Graphite interface {
-	Connect()
 	SendMetric()
 	Sendall()
 	chanRecv()
