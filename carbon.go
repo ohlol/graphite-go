@@ -4,13 +4,14 @@
 package graphite
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net"
 	"time"
 )
 
-// Interface type for Graphite.
+// Graphite is the main interface to the library
 type Graphite interface {
 	Connect()
 	SendMetric()
@@ -20,8 +21,7 @@ type Graphite interface {
 	sendMetric()
 }
 
-// Graphite is how we interface with the library. At minimum you must set
-// Host and Port fields.
+// GraphiteServer is used to store the Graphite parameters
 type GraphiteServer struct {
 	Host    string
 	Port    uint16
@@ -29,7 +29,7 @@ type GraphiteServer struct {
 	conn    net.Conn
 }
 
-// Metric is contains fields used for sending metrics to Graphite. If Timestamp is not set,
+// Metric contains fields used for sending metrics to Graphite. If Timestamp is not set,
 // one is generated when sent.
 type Metric struct {
 	Name      string
@@ -39,41 +39,45 @@ type Metric struct {
 
 // defaultTimeout is the default connection timeout used by DialTimeout.
 const (
-	defaultTimeout = 30
+	defaultTimeout  = 30
+	initialWaitTime = 30
 )
 
 var doneSending = false
 
-// connect is the unexported function used for connecting
-func connect(host string, port uint16, timeout time.Duration) (net.Conn, error) {
-	connectAddr := fmt.Sprintf("%s:%d", host, port)
-
-	return net.DialTimeout("tcp", connectAddr, timeout)
+// Connect is a factory function for Graphite connection
+func Connect(graphite GraphiteServer) GraphiteServer {
+	return graphite.getconn()
 }
 
-// Connect wraps the unexported connect function.
-// Sets a connection timeout if unset.
-func (g *GraphiteServer) Connect() {
+// getconn is the unexported function used to connect to Graphite.
+// If there is a problem with the connection it retries with an incremental
+// sleep time.
+// Returns a pointer to the GraphiteServer struct.
+func (g *GraphiteServer) getconn() GraphiteServer {
 	var (
-		err     error
-		timeout time.Duration
+		err      error
+		waitTime time.Duration
 	)
 
+	connectAddr := fmt.Sprintf("%s:%d", g.Host, g.Port)
+
 	if g.Timeout == 0 {
-		g.Timeout = defaultTimeout
+		g.Timeout = defaultTimeout * time.Second
 	}
 
-	timeout = g.Timeout * time.Second
-
-	g.conn, err = connect(g.Host, g.Port, timeout)
+	waitTime = initialWaitTime
+	g.conn, err = net.DialTimeout("tcp", connectAddr, g.Timeout)
 	for err != nil {
 		log.Printf(err.Error())
-		log.Printf(fmt.Sprintf("error connecting, retrying in %d seconds", int(timeout.Seconds())))
-		time.Sleep(timeout)
+		log.Printf(fmt.Sprintf("error123 connecting, retrying in %d seconds", waitTime))
+		time.Sleep(waitTime * time.Second)
 
-		timeout = (g.Timeout + 5) * time.Second
-		g.conn, err = connect(g.Host, g.Port, timeout)
+		waitTime += 5
+		g.conn, err = net.DialTimeout("tcp", connectAddr, g.Timeout)
 	}
+
+	return *g
 }
 
 // SendMetric is used to send a single metric to Graphite.
@@ -101,7 +105,17 @@ func (g *GraphiteServer) Sendall(buf []Metric) {
 
 // chanRecvMetrics reads `bufsz` numbered metrics off of the given channel and
 // sends them to Graphite.
+// If a panic() is received within the stack, log the error and stop
+// receiving metrics on the channel (preferably to can try and recover).
 func (g *GraphiteServer) chanRecv(ch chan Metric, bufsz int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println(r)
+			doneSending = true
+			return
+		}
+	}()
+
 	for i := 0; i < bufsz; i++ {
 		item := <-ch
 		g.sendMetric(item)
@@ -121,7 +135,37 @@ func (g *GraphiteServer) chanSend(ch chan Metric, buffer []Metric) {
 }
 
 // sendMetric is the unexported function to send a single metric to Graphite.
-func (g *GraphiteServer) sendMetric(metric Metric) {
+// If there is a problem, call panic(). If the problem occurs during a Write() call,
+// try to reconnect to Graphite.
+func (g *GraphiteServer) sendMetric(metric Metric) error {
+	if g.conn == nil {
+		panic("no graphite connection?")
+	}
+
+	if metric.HasEmptyField() {
+		panic("badly formed metric")
+	}
+
+	buf := bytes.NewBufferString(fmt.Sprintf("%s %s %d\n", metric.Name, metric.Value, metric.Timestamp))
+
 	log.Printf("sending %s", metric.Name)
-	fmt.Fprintf(g.conn, "%s %s %d\n", metric.Name, metric.Value, metric.Timestamp)
+	_, err := g.conn.Write(buf.Bytes())
+	for err != nil {
+		log.Printf("trouble writing metric; retrying: %s", err)
+		g.getconn()
+		err = g.sendMetric(metric)
+	}
+
+	return nil
+}
+
+// HasEmptyField is a helper function to determine if any Metric fields are empty.
+func (m *Metric) HasEmptyField() bool {
+	if len(m.Name) == 0 {
+		return true
+	} else if len(m.Value) == 0 {
+		return true
+	}
+
+	return false
 }
