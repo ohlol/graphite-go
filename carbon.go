@@ -95,6 +95,7 @@ func (g *GraphiteServer) chanSend(ch chan Metric, buffer []Metric) {
 			ch <- item
 		}
 	}
+	close(ch)
 }
 
 // getconn is the unexported function used to connect to Graphite.
