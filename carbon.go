@@ -42,8 +42,6 @@ const (
 	initialWaitTime = 30
 )
 
-var doneSending = false
-
 // Connect is a factory function for Graphite connection
 func Connect(graphite GraphiteServer) GraphiteServer {
 	return graphite.getconn()
@@ -61,36 +59,32 @@ func (g *GraphiteServer) SendMetric(metric Metric) {
 
 // Sendall is used to buffered metrics to Graphite via a channel and go routines.
 func (g *GraphiteServer) Sendall(buf []Metric) {
-	doneSending = false
-
 	ch := make(chan Metric, len(buf))
+	done := make(chan bool)
 	go g.chanSend(ch, buf)
-	go g.chanRecv(ch, len(buf))
+	go g.chanRecv(ch, done)
 
-	for doneSending == false {
-		time.Sleep(1 * time.Second)
-	}
+
 }
 
 // chanRecvMetrics reads `bufsz` numbered metrics off of the given channel and
 // sends them to Graphite.
 // If a panic() is received within the stack, log the error and stop
 // receiving metrics on the channel (preferably to can try and recover).
-func (g *GraphiteServer) chanRecv(ch chan Metric, bufsz int) {
+func (g *GraphiteServer) chanRecv(rch chan Metric, done chan bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println(r)
-			doneSending = true
+			done <- true
 			return
 		}
 	}()
 
-	for i := 0; i < bufsz; i++ {
-		item := <-ch
+	for item := range rch {
 		g.sendMetric(item)
 	}
 
-	doneSending = true
+	done <- true
 }
 
 // chanSendMetrics sends a Metric slice to the given channel
