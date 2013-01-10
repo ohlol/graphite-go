@@ -64,7 +64,6 @@ func (g *GraphiteServer) Sendall(buf []Metric) {
 	go g.chanSend(ch, buf)
 	go g.chanRecv(ch, done)
 
-
 }
 
 // chanRecvMetrics reads `bufsz` numbered metrics off of the given channel and
