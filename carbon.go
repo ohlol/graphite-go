@@ -63,7 +63,7 @@ func (g *GraphiteServer) Sendall(buf []Metric) {
 	done := make(chan bool)
 	go g.chanSend(ch, buf)
 	go g.chanRecv(ch, done)
-
+	<-done
 }
 
 // chanRecvMetrics reads `bufsz` numbered metrics off of the given channel and
@@ -154,11 +154,8 @@ func (g *GraphiteServer) sendMetric(metric Metric) error {
 
 // HasEmptyField is a helper function to determine if any Metric fields are empty.
 func (m *Metric) HasEmptyField() bool {
-	if len(m.Name) == 0 {
-		return true
-	} else if len(m.Value) == 0 {
+	if len(m.Name) == 0 || len(m.Value) == 0 {
 		return true
 	}
-
 	return false
 }
