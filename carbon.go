@@ -90,7 +90,6 @@ func (g *GraphiteServer) chanRecv(rch chan Metric, done chan bool) {
 func (g *GraphiteServer) chanSend(ch chan Metric, buffer []Metric) {
 	for _, item := range buffer {
 		if len(item.Name) > 0 {
-			log.Printf("buffering %s", item.Name)
 			ch <- item
 		}
 	}
@@ -141,7 +140,6 @@ func (g *GraphiteServer) sendMetric(metric Metric) error {
 
 	buf := bytes.NewBufferString(fmt.Sprintf("%s %s %d\n", metric.Name, metric.Value, metric.Timestamp))
 
-	log.Printf("sending %s", metric.Name)
 	_, err := g.conn.Write(buf.Bytes())
 	for err != nil {
 		log.Printf("trouble writing metric; retrying: %s", err)
